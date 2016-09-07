@@ -7,9 +7,9 @@ setup(
     version="0.1.4",
     packages=find_packages(),
     install_requires=[
-        "django>=1.8",
+        "django>=1.6",
         "qrcode>=5.3",
-        "django-allauth>=0.26.1",
+        "django-allauth>=0.25.2",
         "django-otp>=0.3.5",
     ],
     author="Víðir Valberg Guðmundsson",
