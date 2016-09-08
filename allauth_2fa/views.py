@@ -132,7 +132,13 @@ class QRCodeGeneratorView(View):
 
     def get(self, request, *args, **kwargs):
         content_type = 'image/svg+xml; charset=utf-8'
-        raw_key = request.session['allauth_otp_qr_secret_key']
+
+        if 'allauth_otp_qr_secret_key' not in request.session:
+            raw_key = random_hex(20).decode('ascii')
+            request.session['allauth_otp_qr_secret_key'] = raw_key
+        else:
+            raw_key = request.session['allauth_otp_qr_secret_key']
+
         secret_key = b32encode(unhexlify(raw_key)).decode('utf-8')
         issuer = get_current_site(request).name
 
