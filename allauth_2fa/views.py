@@ -8,7 +8,7 @@ except ImportError:
 from django.core.urlresolvers import reverse_lazy
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.contrib.sites.shortcuts import get_current_site
+# from django.contrib.sites.shortcuts import get_current_site
 from django.http import HttpResponseRedirect, HttpResponse
 from django.views.generic import FormView, View, TemplateView
 from django_otp.plugins.otp_static.models import StaticToken
@@ -140,7 +140,7 @@ class QRCodeGeneratorView(View):
             raw_key = request.session['allauth_otp_qr_secret_key']
 
         secret_key = b32encode(unhexlify(raw_key)).decode('utf-8')
-        issuer = get_current_site(request).name
+        issuer = 'getstream.io'
 
         otpauth_url = 'otpauth://totp/{label}?{query}'.format(
             label=quote('{issuer}: {username}'.format(
