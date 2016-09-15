@@ -3,8 +3,15 @@
 Changelog
 #########
 
-0.2 TBD
-=======
+0.2.1 xxx
+=========
+
+* Support custom ``User`` models.
+* Minor simplifications of code.
+* Minor updates to documentation.
+
+0.2 September 9, 2016
+=====================
 
 * Add tests / tox / Travis support.
 * Don't pin dependencies.
