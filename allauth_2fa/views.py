@@ -141,10 +141,16 @@ class QRCodeGeneratorView(View):
 
     def get(self, request, *args, **kwargs):
         content_type = 'image/svg+xml; charset=utf-8'
-        request.user.totpdevice_set.filter(confirmed=False).delete()
-        TOTPDevice(user=request.user, confirmed=False).save()
+
+        name = request.GET.get('name', 'default')
         device = request.user.totpdevice_set\
-            .filter(confirmed=False).first()
+            .filter(confirmed=False, name=name).first()
+
+        if device is None or name == 'default':
+            request.user.totpdevice_set.filter(confirmed=False).delete()
+            device = TOTPDevice(user=request.user, name=name, confirmed=False)
+            device.save()
+
         secret_key = b32encode(device.bin_key).decode('utf-8')
         issuer = 'getstream.io'
 
