@@ -3,15 +3,21 @@
 Changelog
 #########
 
-0.2.1 xxx
-=========
+0.3.1 October 5, 2016
+=====================
+
+* Properly handle an ``AnonymousUser`` hitting the views.
+
+0.3 October 5, 2016
+===================
 
 * Support custom ``User`` models.
 * Fixed a bug where a user could end up half logged in if they didn't complete
   the two-factor login flow. A user's login flow will now be reset. Requires
   enabled the included middle: ``allauth_2fa.middleware.AllauthTwoFactorMiddleware``.
 * Disable autocomplete on the two-factor code input form.
-* Minor simplifications of code.
+* Properly redirect anonymous users.
+* Minor simplifications of code (and inherit more code from django-otp).
 * Minor updates to documentation.
 
 0.2 September 9, 2016

@@ -1,14 +1,14 @@
 from django.conf.urls import url
 
-from . import views
+from allauth_2fa import views
 
 
-urlpatterns =  [
+urlpatterns = [
     url(r"^two-factor-authenticate$",
-        views.two_factor_authenticate,
+        views.TwoFactorAuthenticate.as_view(),
         name="two-factor-authenticate"),
 
     url(r"^two_factor/qr_code$",
-        views.two_factor_qr_code_generator,
+        views.QRCodeGeneratorView.as_view(),
         name="two-factor-qr-code"),
 ]

@@ -1,16 +1,15 @@
 from base64 import b32encode
-from binascii import unhexlify
 try:
     from urllib.parse import quote, urlencode
 except ImportError:
     from urllib import quote, urlencode
 
-from django.core.urlresolvers import reverse_lazy
 from django.conf import settings
-from django.contrib.auth import get_user_model
-from django.shortcuts import redirect
+from django.contrib.auth import get_user_model, login
+from django.contrib.auth.views import redirect_to_login
 # from django.contrib.sites.shortcuts import get_current_site
-from django.http import HttpResponseRedirect, HttpResponse
+from django.core.urlresolvers import reverse_lazy
+from django.http import HttpResponseRedirect, HttpResponse, Http404
 from django.shortcuts import redirect
 from django.views.generic import FormView, View, TemplateView
 
@@ -38,8 +37,11 @@ class TwoFactorAuthenticate(FormView):
 
     def dispatch(self, request, *args, **kwargs):
         # If the user is not about to enter their two-factor credentials,
-        # redirect to the login page (they shouldn't be here!)
+        # redirect to the login page (they shouldn't be here!). This includes
+        # anonymous users.
         if 'allauth_2fa_user_id' not in request.session:
+            # Don't use the redirect_to_login here since we don't actually want
+            # to include the next parameter.
             return redirect('account_login')
         return super(TwoFactorAuthenticate, self).dispatch(request, *args,
                                                            **kwargs)
@@ -51,14 +53,10 @@ class TwoFactorAuthenticate(FormView):
         return kwargs
 
     def form_valid(self, form):
-        from django.contrib.auth import login
         if not hasattr(form.user, 'backend'):
-            form.user.backend \
-                = "allauth.account.auth_backends.AuthenticationBackend"
+            form.user.backend = "allauth.account.auth_backends.AuthenticationBackend"
         login(self.request, form.user)
         return super(TwoFactorAuthenticate, self).form_valid(form)
-
-two_factor_authenticate = TwoFactorAuthenticate.as_view()
 
 
 class TwoFactorSetup(FormView):
@@ -67,24 +65,47 @@ class TwoFactorSetup(FormView):
     success_url = reverse_lazy('two-factor-backup-tokens')
 
     def dispatch(self, request, *args, **kwargs):
+        # TODO Once Django 1.9 is the minimum supported version, see if we can
+        # use LoginRequiredMixin.
+        if request.user.is_anonymous():
+            return redirect_to_login(self.request.get_full_path())
+
+        # If the user has 2FA setup already, redirect them to the backup tokens.
         if request.user.totpdevice_set.filter(confirmed=True).exists():
             return HttpResponseRedirect(reverse_lazy('two-factor-backup-tokens'))
 
-        request.user.totpdevice_set.filter(confirmed=False).delete()
-        TOTPDevice(user=request.user, confirmed=False).save()
-
         return super(TwoFactorSetup, self).dispatch(request, *args, **kwargs)
 
-    def get_form_kwargs(self, request):
+    def _new_device(self):
+        """
+        Replace any unconfirmed TOTPDevices with a new one for confirmation.
+
+        This needs to be done whenever a GET request to the page is received OR
+        if the confirmation of the device fails.
+        """
+        self.request.user.totpdevice_set.filter(confirmed=False).delete()
+        TOTPDevice.objects.create(user=self.request.user, confirmed=False)
+
+    def get(self, request, *args, **kwargs):
+        # Whenever this page is loaded, create a new device (this ensures a
+        # user's QR code isn't shown multiple times).
+        self._new_device()
+        return super(TwoFactorSetup, self).get(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
         kwargs = super(TwoFactorSetup, self).get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
 
     def form_valid(self, form):
+        # Confirm the device.
         form.save()
         return super(TwoFactorSetup, self).form_valid(form)
 
-two_factor_setup = TwoFactorSetup.as_view()
+    def form_invalid(self, form):
+        # If the confirmation code was wrong, generate a new device.
+        self._new_device()
+        return super(TwoFactorSetup, self).form_invalid(form)
 
 
 class TwoFactorRemove(FormView):
@@ -93,6 +114,11 @@ class TwoFactorRemove(FormView):
     success_url = reverse_lazy('two-factor-setup')
 
     def dispatch(self, request, *args, **kwargs):
+        # TODO Once Django 1.9 is the minimum supported version, see if we can
+        # use LoginRequiredMixin.
+        if request.user.is_anonymous():
+            return redirect_to_login(self.request.get_full_path())
+
         if request.user.totpdevice_set.exists():
             return super(TwoFactorRemove, self).dispatch(request, *args, **kwargs)
         else:
@@ -107,11 +133,17 @@ class TwoFactorRemove(FormView):
         kwargs['user'] = self.request.user
         return kwargs
 
-two_factor_remove = TwoFactorRemove.as_view()
-
 
 class TwoFactorBackupTokens(TemplateView):
     template_name = 'allauth_2fa/backup_tokens.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        # TODO Once Django 1.9 is the minimum supported version, see if we can
+        # use LoginRequiredMixin.
+        if request.user.is_anonymous():
+            return redirect_to_login(self.request.get_full_path())
+
+        return super(TwoFactorRemove, self).dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super(TwoFactorBackupTokens, self).get_context_data(*kwargs)
@@ -133,13 +165,15 @@ class TwoFactorBackupTokens(TemplateView):
             static_device.token_set.create(token=StaticToken.random_token())
         return self.get(request, *args, **kwargs)
 
-two_factor_backup_tokens = TwoFactorBackupTokens.as_view()
-
 
 class QRCodeGeneratorView(View):
+    """Renders a QR code as an SVG for a particular user's device."""
     http_method_names = ['get']
 
     def get(self, request, *args, **kwargs):
+        if request.user.is_anonymous():
+            raise Http404()
+
         content_type = 'image/svg+xml; charset=utf-8'
 
         name = request.GET.get('name', 'default')
@@ -161,7 +195,7 @@ class QRCodeGeneratorView(View):
             )),
             query=urlencode((
                 ('secret', secret_key),
-                ('digits', 6),
+                ('digits', device.get_digits_display()),
                 ('issuer', issuer),
             ))
         )
@@ -170,5 +204,3 @@ class QRCodeGeneratorView(View):
         response = HttpResponse(content_type=content_type)
         img.save(response)
         return response
-
-two_factor_qr_code_generator = QRCodeGeneratorView.as_view()
