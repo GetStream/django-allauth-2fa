@@ -1,13 +1,29 @@
+from copy import deepcopy
+import unittest
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.urlresolvers import reverse
-from django.test import TestCase
+from django.test import override_settings, TestCase
+try:
+    from django.utils.deprecation import MiddlewareMixin
+except ImportError:
+    MiddlewareMixin = None
 
 from django_otp.oath import TOTP
+from allauth.account.signals import user_logged_in
 
 
 class Test2Factor(TestCase):
+    def setUp(self):
+        # Track the signals sent via allauth.
+        self.user_logged_in_count = 0
+        user_logged_in.connect(self._login_callback)
+
+    def _login_callback(self, sender, **kwargs):
+        self.user_logged_in_count += 1
+
     def test_standard_login(self):
         """Test login behavior when 2FA is not configured."""
         user = get_user_model().objects.create(username='john')
@@ -20,6 +36,9 @@ class Test2Factor(TestCase):
         self.assertRedirects(resp,
                              settings.LOGIN_REDIRECT_URL,
                              fetch_redirect_response=False)
+
+        # Ensure the signal is received as expected.
+        self.assertEqual(self.user_logged_in_count, 1)
 
     def test_2fa_login(self):
         """Test login behavior when 2FA is configured."""
@@ -42,6 +61,9 @@ class Test2Factor(TestCase):
         self.assertRedirects(resp,
                              settings.LOGIN_REDIRECT_URL,
                              fetch_redirect_response=False)
+
+        # Ensure the signal is received as expected.
+        self.assertEqual(self.user_logged_in_count, 1)
 
     def test_invalid_2fa_login(self):
         """Test login behavior when 2FA is configured and wrong code is given."""
@@ -145,3 +167,40 @@ class Test2Factor(TestCase):
         # Finally, the QR image view just 404s.
         resp = self.client.get(reverse('two-factor-qr-code'))
         self.assertEqual(resp.status_code, 404)
+
+    def test_unnamed_view(self):
+        """Views without names should not throw an exception."""
+        user = get_user_model().objects.create(username='john')
+        user.set_password('doe')
+        user.save()
+        user.totpdevice_set.create()
+
+        resp = self.client.post(reverse('account_login'),
+                                {'login': 'john',
+                                 'password': 'doe'})
+        self.assertRedirects(resp,
+                             reverse('two-factor-authenticate'),
+                             fetch_redirect_response=False)
+
+        # The user ID should be in the session.
+        self.assertIn('allauth_2fa_user_id', self.client.session)
+
+        # Navigate to a different (unnamed) page.
+        resp = self.client.get('/unnamed-view')
+
+        # The middleware should reset the login flow.
+        self.assertNotIn('allauth_2fa_user_id', self.client.session)
+
+        # Trying to continue with two-factor without logging in again will
+        # redirect to login.
+        resp = self.client.get(reverse('two-factor-authenticate'))
+
+        self.assertRedirects(resp,
+                             reverse('account_login'),
+                             fetch_redirect_response=False)
+
+
+@unittest.skipIf(not MiddlewareMixin, 'Additional middleware tests are Django > 1.10.')
+@override_settings(MIDDLEWARE=settings.MIDDLEWARE_CLASSES, MIDDLEWARE_CLASSES=[])
+class Test2FactorMiddleware(deepcopy(Test2Factor)):
+    """Test the 2FA code when using MIDDLEWARE instead of MIDDLEWARE_CLASSES."""
