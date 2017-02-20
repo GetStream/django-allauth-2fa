@@ -3,6 +3,30 @@
 Changelog
 #########
 
+0.4.4 Unreleased
+================
+
+* Adds trailing slashes to the URL patterns. This is backwards compatible with
+  the old URLs.
+
+0.4.3 January 18, 2017
+======================
+
+* Adds support for forwarding ``GET`` parameters through the 2FA workflow. This
+  fixes ``next`` not working when logging in using 2FA.
+
+0.4.2 December 15, 2016
+=======================
+
+* Reverts the fix in 0.4.1 as this breaks custom adapters that inherit from
+  ``OTPAdapter`` and *don't* override the ``login`` method.
+
+0.4.1 December 14, 2016
+=======================
+
+* Fixed a bug when using a custom adapter that doesn't inherit from
+  ``OTPAdapter`` and that overrides the ``login`` method.
+
 0.4 November 7, 2016
 ====================
 

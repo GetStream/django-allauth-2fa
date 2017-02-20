@@ -4,8 +4,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="django-allauth-2fa",
-    version="0.4",
+    version="0.4.3",
     packages=find_packages(),
+    include_package_data=True,
     install_requires=[
         "django>=1.6",
         "qrcode>=5.3",

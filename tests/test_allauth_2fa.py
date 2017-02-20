@@ -11,8 +11,9 @@ try:
 except ImportError:
     MiddlewareMixin = None
 
-from django_otp.oath import TOTP
 from allauth.account.signals import user_logged_in
+
+from django_otp.oath import TOTP
 
 
 class Test2Factor(TestCase):
@@ -143,6 +144,27 @@ class Test2Factor(TestCase):
                              reverse('account_login'),
                              fetch_redirect_response=False)
 
+    def test_2fa_login_forwarding_get_parameters(self):
+        """
+        Test that the 2FA workflow passes forward the GET parameters sent to the
+        TwoFactorAuthenticate view.
+        """
+        user = get_user_model().objects.create(username='john')
+        user.set_password('doe')
+        user.save()
+        totp_model = user.totpdevice_set.create()
+
+        # Add a next to unnamed-view.
+        resp = self.client.post(reverse('account_login') + '?next=unnamed-view',
+                                {'login': 'john',
+                                 'password': 'doe'}, follow=True)
+
+        # Ensure that the unnamed-view is still being forwarded to.
+        self.assertRedirects(
+            resp,
+            reverse('two-factor-authenticate') + '?next=unnamed-view',
+            fetch_redirect_response=False)
+
     def test_anonymous(self):
         """
         Views should not be hittable via an AnonymousUser.
@@ -198,6 +220,34 @@ class Test2Factor(TestCase):
         self.assertRedirects(resp,
                              reverse('account_login'),
                              fetch_redirect_response=False)
+
+    def test_backwards_compatible_url(self):
+        """Ensure that the old 2FA URLs still work."""
+        user = get_user_model().objects.create(username='john')
+        user.set_password('doe')
+        user.save()
+        totp_model = user.totpdevice_set.create()
+
+        resp = self.client.post(reverse('account_login'),
+                                {'login': 'john',
+                                 'password': 'doe'})
+        self.assertRedirects(resp,
+                             reverse('two-factor-authenticate'),
+                             fetch_redirect_response=False)
+
+        # Now ensure that logging in actually works.
+        totp = TOTP(totp_model.bin_key, totp_model.step, totp_model.t0, totp_model.digits)
+
+        # The old URL doesn't have a trailing slash.
+        url = reverse('two-factor-authenticate').rstrip('/')
+
+        resp = self.client.post(url, {'otp_token': totp.token()})
+        self.assertRedirects(resp,
+                             settings.LOGIN_REDIRECT_URL,
+                             fetch_redirect_response=False)
+
+        # Ensure the signal is received as expected.
+        self.assertEqual(self.user_logged_in_count, 1)
 
 
 @unittest.skipIf(not MiddlewareMixin, 'Additional middleware tests are Django > 1.10.')
